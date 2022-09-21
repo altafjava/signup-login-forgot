@@ -68,7 +68,7 @@ public class ForgotPasswordService {
 
 	public ResponseEntity<String> verifyOTP(String mobile, String email, String otp, String otpType) {
 		String originalOTP = null;
-		Customer customer = customerRepository.findByMobileOrEmail(mobile, email);
+		Customer customer = customerRepository.findByMobileOrEmailAndIsVerifiedCustomerTrue(mobile, email);
 		if (customer != null) {
 			String customerId = customer.getCustomerId();
 			List<OTP> otpList = otpRepository.findByOtpTypeAndIsExpiredFalseOrderByUpdatedTimeDesc(otpType);

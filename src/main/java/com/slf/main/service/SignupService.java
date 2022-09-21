@@ -6,10 +6,12 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-
 import com.slf.main.dto.SignupDTO;
 import com.slf.main.dto.SignupReturnDTO;
 import com.slf.main.dto.VerifyOtpDTO;
@@ -39,12 +41,19 @@ public class SignupService {
 	private CustomerRepository customerRepository;
 	@Autowired
 	private OtpRepository otpRepository;
+	@Autowired
+	private MongoTemplate mongoTemplate;
 
 	public ResponseEntity<?> signup(SignupDTO signupDTO) {
 
 		String mobile = signupDTO.getMobile();
 		String email = signupDTO.getEmail();
-		Customer customer = customerRepository.findByMobileOrEmail(mobile, email);
+		Criteria criteria = new Criteria();
+		criteria.andOperator(Criteria.where("mobile").is(mobile).orOperator(Criteria.where("email").is(email)), Criteria.where("isVerifiedCustomer").is(true));
+		Query query = new Query();
+		query.addCriteria(criteria);
+		Customer customer = mongoTemplate.findOne(query, Customer.class);
+//		Customer customer = customerRepository.findByMobileOrEmailAndIsVerifiedCustomerTrue(mobile, email);
 		if (customer == null) {
 //			generate otp
 			String generatedOtp = Integer.toString(OTPGenerator.generateOTP());
@@ -70,12 +79,21 @@ public class SignupService {
 		String userOtp = verifyOtpDTO.getOtp();
 		String encryptedOTP = OTPEncryptorDecryptor.encrypt(userOtp);
 		OTP otp = otpRepository.findByIdAndOtpTypeAndIsExpiredFalse(verifyOtpDTO.getOtpId(), otpType);
-		if (otp != null && otp.getEncryptedOTP().equals(encryptedOTP) && verifyOtpDTO.getMobile().equals(otp.getMobile()) && verifyOtpDTO.getEmail().equals(otp.getEmail())) {
+		if (otp != null && otp.getEncryptedOTP().equals(encryptedOTP) && verifyOtpDTO.getMobile().equals(otp.getMobile())
+				&& verifyOtpDTO.getEmail().equals(otp.getEmail())) {
 			String customerId = verifyOtpDTO.getCustomerId();
 			Customer customer = customerRepository.findByCustomerId(customerId);
 			if (customer == null) {
 				return new ResponseEntity<>("Wrong customerId", HttpStatus.FORBIDDEN);
 			} else {
+				customer.setVerifiedCustomer(true);
+				if (verifyOtpDTO.getMobile() != null && verifyOtpDTO.getMobile() != "") {
+					customer.setMobileVerified(true);
+				}
+				if (verifyOtpDTO.getEmail() != null && verifyOtpDTO.getEmail() != "") {
+					customer.setEmailVerified(true);
+				}
+				customerRepository.save(customer);
 				String token = createJwtUser(customerId);
 				return new ResponseEntity<>(token, HttpStatus.OK);
 			}
